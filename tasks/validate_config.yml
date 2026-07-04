@@ -17,15 +17,14 @@
 - name: Fail if required Tandoor settings not defined
   ansible.builtin.fail:
     msg: >-
-      You need to define a required configuration setting (`{{ item.name }}`).
-  when: "item.when | bool and lookup('vars', item.name, default='') | string | length == 0"
+      You need to define a required configuration setting (`{{ item }}`).
+  when: "lookup('vars', item, default='') | string | length == 0"
   with_items:
-    - { "name": "tandoor_uid", when: true }
-    - { "name": "tandoor_gid", when: true }
-    - { "name": "tandoor_hostname", when: true }
-    - { "name": "tandoor_path_prefix", when: true }
-    - { "name": "tandoor_container_network", when: true }
-    - { "name": "tandoor_container_labels_traefik_middleware_basic_auth_users", when: "{{ tandoor_container_labels_traefik_middleware_basic_auth_enabled }}" }
+    - tandoor_uid
+    - tandoor_gid
+    - tandoor_hostname
+    - tandoor_path_prefix
+    - tandoor_container_network
 
 - name: Run if Traefik is enabled
   when: tandoor_container_labels_traefik_enabled | bool
@@ -33,11 +32,12 @@
     - name: Fail if required Tandoor Traefik settings not defined
       ansible.builtin.fail:
         msg: >-
-          You need to define a required configuration setting (`{{ item }}`).
-      when: "lookup('vars', item, default='') | string | length == 0"
+          You need to define a required configuration setting (`{{ item.name }}`).
+      when: "item.when | bool and lookup('vars', item.name, default='') | string | length == 0"
       with_items:
-        - tandoor_container_labels_traefik_hostname
-        - tandoor_container_labels_traefik_path_prefix
+        - { "name": "tandoor_container_labels_traefik_hostname", when: true }
+        - { "name": "tandoor_container_labels_traefik_path_prefix", when: true }
+        - { "name": "tandoor_container_labels_traefik_middleware_basic_auth_users", when: "{{ tandoor_container_labels_traefik_middleware_basic_auth_enabled }}" }
 
     - name: Fail if tandoor_container_labels_traefik_path_prefix is different than /
       ansible.builtin.fail:
