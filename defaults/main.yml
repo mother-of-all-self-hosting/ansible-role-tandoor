@@ -160,7 +160,7 @@ tandoor_http_header_strict_transport_security: "max-age=31536000; includeSubDoma
 # - https://amifloced.org/
 #
 # Of course, a better solution is to just stop using browsers (like Chrome), which participate in such tracking practices.
-# See: `tandoor_content_permission_policy`
+# See: `tandoor_http_header_permissions_policy`
 tandoor_floc_optout_enabled: true
 
 # Controls if HSTS preloading is enabled
