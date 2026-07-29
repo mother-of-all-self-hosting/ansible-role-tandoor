@@ -27,6 +27,12 @@
     - tandoor_container_network
     - tandoor_environment_variable_secret
 
+- name: Fail if Tandoor database type invalid
+  ansible.builtin.fail:
+    msg: >-
+      tandoor_database_type must be 'postgres' or 'sqlite'
+  when: "tandoor_database_type not in ['postgres', 'sqlite']"
+
 - name: Run if Traefik is enabled
   when: tandoor_container_labels_traefik_enabled | bool
   block:

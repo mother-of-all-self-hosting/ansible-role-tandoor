@@ -218,8 +218,11 @@ tandoor_container_cleanup_command: |
   echo "Failed to remove stale container {{ tandoor_identifier }} after {{ tandoor_container_cleanup_timeout_seconds }} attempts" >&2;
   exit 1
 
-# Specify database configuration
+# Specify a database driver to use
+# Valid values: postgres, sqlite
 tandoor_database_type: postgres
+
+# Specify database configuration
 tandoor_database_hostname: ""
 tandoor_database_port: 5432
 tandoor_database_name: tandoor
