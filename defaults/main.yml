@@ -16,7 +16,8 @@ tandoor_identifier: tandoor
 # Leftover from version 1.x, only used to delete old files
 tandoor_api_identifier: "{{ tandoor_identifier }}-api"
 tandoor_frontend_identifier: "{{ tandoor_identifier }}-frontend"
-tandoor_base_path: "/{{ tandoor_base_path }}/tandoor"
+
+tandoor_base_path: "/{{ tandoor_identifier }}"
 tandoor_data_path: "{{ tandoor_base_path }}/data"
 tandoor_staticfiles_path: "{{ tandoor_data_path }}/staticfiles"
 tandoor_mediafiles_path: "{{ tandoor_data_path }}/mediafiles"
