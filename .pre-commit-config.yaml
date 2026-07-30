@@ -40,3 +40,11 @@ repos:
     rev: 43.251.0
     hooks:
       - id: renovate-config-validator
+  - repo: local
+    hooks:
+      - id: unit-tests
+        name: unit tests
+        entry: python3 -B -m unittest discover -s tests -p 'test_*.py'
+        language: system
+        pass_filenames: false
+        files: ^(tasks/uninstall\.yml|defaults/main\.yml|tests/test_uninstall_variables\.py)$
