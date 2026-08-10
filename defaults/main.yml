@@ -16,7 +16,8 @@ tandoor_identifier: tandoor
 # Leftover from version 1.x, only used to delete old files
 tandoor_api_identifier: "{{ tandoor_identifier }}-api"
 tandoor_frontend_identifier: "{{ tandoor_identifier }}-frontend"
-tandoor_base_path: "/{{ tandoor_base_path }}/tandoor"
+
+tandoor_base_path: "/{{ tandoor_identifier }}"
 tandoor_data_path: "{{ tandoor_base_path }}/data"
 tandoor_staticfiles_path: "{{ tandoor_data_path }}/staticfiles"
 tandoor_mediafiles_path: "{{ tandoor_data_path }}/mediafiles"
@@ -218,8 +219,11 @@ tandoor_container_cleanup_command: |
   echo "Failed to remove stale container {{ tandoor_identifier }} after {{ tandoor_container_cleanup_timeout_seconds }} attempts" >&2;
   exit 1
 
-# Specify database configuration
+# Specify a database driver to use
+# Valid values: postgres, sqlite
 tandoor_database_type: postgres
+
+# Specify database configuration
 tandoor_database_hostname: ""
 tandoor_database_port: 5432
 tandoor_database_name: tandoor
