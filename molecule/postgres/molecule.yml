@@ -38,10 +38,10 @@ provisioner:
         tandoor_hostname: localhost
         tandoor_container_labels_traefik_enabled: false
         tandoor_container_http_host_bind_port: 80
-        tandoor_database_type: postgres
         tandoor_environment_variable_secret: secret
 
         # Variables required for Tandoor to connect to the Postgres database
+        tandoor_database_type: postgres
         tandoor_database_hostname: "{{ postgres_connection_hostname }}"
         tandoor_database_port: "{{ postgres_connection_port }}"
         tandoor_database_username: my_database_username
