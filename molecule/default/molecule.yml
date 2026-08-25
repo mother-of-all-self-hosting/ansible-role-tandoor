@@ -30,18 +30,47 @@ provisioner:
       all:
         # Helper variables
         tandoor_debug_service_enabled: false
+        # A name the role never puts into ALLOWED_HOSTS, used to check that
+        # Tandoor turns away everything it was not configured for.
+        tandoor_molecule_unexpected_hostname: unexpected.molecule.test
 
         # Variables for Tandoor
+        tandoor_identifier: tandoor
         tandoor_uid: 0
         tandoor_gid: 0
         tandoor_scheme: http
-        tandoor_hostname: localhost
-        tandoor_container_labels_traefik_enabled: false
+        # Deliberately not localhost: a value nothing else could have supplied
+        # is what makes finding it in ALLOWED_HOSTS mean the role's env file
+        # reached the process.
+        tandoor_hostname: tandoor.molecule.test
+        # This scenario is the one that exercises the Traefik label file.
+        # The `web` entrypoint keeps TLS (and a certificate resolver that has
+        # nothing to resolve against here) out of the labels.
+        tandoor_container_labels_traefik_enabled: true
+        tandoor_container_labels_traefik_entrypoints: web
+        tandoor_container_http_port: 80
         tandoor_container_http_host_bind_port: 80
-        tandoor_environment_variable_secret: secret
+        tandoor_environment_variable_secret: molecule-secret-default
         tandoor_database_type: sqlite
   env:
     # Workaround for https://github.com/ansible/molecule/issues/4391
     ANSIBLE_ROLES_PATH: ${MOLECULE_PROJECT_DIRECTORY}/..:/.ansible/roles:/usr/share/ansible/roles:/etc/ansible/roles:~/.ansible/roles
+scenario:
+  # See: https://docs.ansible.com/projects/molecule/configuration/?h=test_sequence#scenario
+  #
+  # `cleanup` is where this scenario uninstalls Tandoor again, so the usual
+  # leading `cleanup` step is left out - there would be nothing installed to
+  # uninstall at that point, and no instance to run it against.
+  test_sequence:
+    - dependency
+    - destroy
+    - syntax
+    - create
+    - prepare
+    - converge
+    - idempotence
+    - verify
+    - cleanup
+    - destroy
 verifier:
   name: ansible

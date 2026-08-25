@@ -1,53 +1,124 @@
-# SPDX-FileCopyrightText: 2026 spatterlight
+# SPDX-FileCopyrightText: 2026 Slavi Pantaleev
 # SPDX-FileCopyrightText: 2026 Suguru Hirahara
+# SPDX-FileCopyrightText: 2026 spatterlight
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 ---
-- name: Verify Tandoor systemd service
+- name: Verify Tandoor
   hosts: all
   become: true
   gather_facts: false
+
+  vars:
+    tandoor_verify_base_path: "/{{ tandoor_identifier }}"
+    tandoor_verify_url: "http://{{ tandoor_hostname }}:{{ tandoor_container_http_host_bind_port }}"
+    tandoor_verify_unexpected_host_url: "http://{{ tandoor_molecule_unexpected_hostname }}:{{ tandoor_container_http_host_bind_port }}"
+
+    # Where Tandoor's settings would put a SQLite file if `DB_ENGINE` did not
+    # name the Postgres backend.
+    tandoor_verify_sqlite_path: /opt/recipes/db.sqlite3
+
+    # The query goes in as the role's own database user rather than as the
+    # Postgres superuser, so `tandoor_database_username`, `_password` and
+    # `_name` are all under test here too.
+    tandoor_verify_psql:
+      - docker
+      - exec
+      - "--env=PGPASSWORD={{ tandoor_database_password }}"
+      - "{{ postgres_identifier | default('postgres') }}"
+      - psql
+      - "--username={{ tandoor_database_username }}"
+      - "--dbname={{ tandoor_database_name }}"
+      - --tuples-only
+      - --no-align
+
+    tandoor_verify_migration_count_sql: "SELECT count(*) FROM django_migrations"
+    tandoor_verify_latest_migration_sql: >-
+      SELECT app || '.' || name FROM django_migrations ORDER BY id DESC LIMIT 1
+
   tasks:
-    - name: Wait for Tandoor service to become active (up to 180s)
-      ansible.builtin.systemd:
-        name: tandoor.service
-      register: tandoor_service
-      until: tandoor_service.status.ActiveState == 'active'
-      retries: 36
-      delay: 5
+    - name: Run the checks shared by all Tandoor scenarios
+      ansible.builtin.include_tasks:
+        file: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/resources/tasks/verify_tandoor.yml"
 
-    - name: Assert Tandoor service is active
-      ansible.builtin.assert:
-        that: tandoor_service.status.ActiveState == 'active'
-        fail_msg: "tandoor.service not active ({{ tandoor_service.status.ActiveState }})"
-        success_msg: "tandoor.service is active"
-
-    - name: Retrieve Tandoor service log for debugging
-      when: tandoor_debug_service_enabled | bool
+    # Pointing `tandoor_database_type` at `postgres` is only worth testing if it
+    # actually moves the data. Asking Postgres itself which migrations Django
+    # recorded there is what settles that: a `DB_ENGINE` that never reached the
+    # process would leave every check above looking exactly as convincing, while
+    # Tandoor quietly kept a SQLite file of its own.
+    - name: Count the migrations Tandoor applied to the Postgres database
       ansible.builtin.command:
-        cmd: journalctl -xeu tandoor.service
+        argv: "{{ tandoor_verify_psql + ['--command=' ~ tandoor_verify_migration_count_sql] }}"
+      register: tandoor_postgres_migrations
+      changed_when: false
+      failed_when: false
+
+    - name: Read the last migration Tandoor applied to the Postgres database
+      ansible.builtin.command:
+        argv: "{{ tandoor_verify_psql + ['--command=' ~ tandoor_verify_latest_migration_sql] }}"
+      register: tandoor_postgres_latest_migration
+      changed_when: false
+      failed_when: false
+
+    - name: Assert that Tandoor migrated the Postgres database the role configured
+      ansible.builtin.assert:
+        that:
+          - tandoor_postgres_migrations.rc == 0
+          - tandoor_postgres_migrations.stdout | trim | int > 100
+          - tandoor_postgres_latest_migration.stdout | trim is match('^cookbook[.]')
+        fail_msg: >-
+          Querying the `{{ tandoor_database_name }}` database as
+          `{{ tandoor_database_username }}` gave
+          rc={{ tandoor_postgres_migrations.rc }},
+          stdout={{ tandoor_postgres_migrations.stdout | default('') | trim }},
+          stderr={{ tandoor_postgres_migrations.stderr | default('') | trim }}
+        success_msg: >-
+          The `{{ tandoor_database_name }}` Postgres database holds
+          {{ tandoor_postgres_migrations.stdout | trim }} applied migrations, the last of
+          them {{ tandoor_postgres_latest_migration.stdout | trim }}
+
+    - name: Check whether Tandoor also wrote a SQLite database
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - "{{ tandoor_identifier }}"
+          - sh
+          - -c
+          - "test -e '{{ tandoor_verify_sqlite_path }}' && echo present || echo absent"
+      register: tandoor_sqlite_file
       changed_when: false
 
-    - name: Wait for Tandoor HTTP endpoint to respond (up to 10m)
-      ansible.builtin.uri:
-        url: "http://localhost:80/"
-        method: GET
-        status_code: [200, 302]
-        follow_redirects: none
-      register: tandoor_endpoint
-      until: tandoor_endpoint.status in [200, 302]
-      retries: 120
-      delay: 5
-
-    - name: Assert Tandoor HTTP endpoint responds
+    # The counterpart of the check above. Tandoor's settings fall back to SQLite
+    # whenever `DB_ENGINE` does not reach the process, and it would then have a
+    # database of its own that worked - every shared check would still pass, and
+    # the rows would simply not be in the database Postgres was asked for.
+    - name: Assert that Tandoor did not fall back to SQLite
       ansible.builtin.assert:
-        that: tandoor_endpoint.status in [200, 302]
-        fail_msg: "Tandoor did not respond as expected ({{ tandoor_endpoint.status | default('no response') }})"
-        success_msg: "Tandoor responded with {{ tandoor_endpoint.status }}"
+        that: tandoor_sqlite_file.stdout | trim == 'absent'
+        fail_msg: >-
+          Tandoor wrote a SQLite database at `{{ tandoor_verify_sqlite_path }}`
+          despite being pointed at Postgres
+        success_msg: "Tandoor wrote no SQLite database, so Postgres is its only store"
 
-    - name: Show Tandoor systemd service status summary
+    # This scenario runs with `tandoor_container_labels_traefik_enabled: false`.
+    # Every Traefik label the role emits has to be inside that conditional -
+    # a label leaking out of it would attach a route to a container the operator
+    # asked not to be routed to.
+    - name: Assert that no Traefik label was written
+      ansible.builtin.assert:
+        that: tandoor_labels_lines | select('match', '^traefik[.]') | list | length == 0
+        fail_msg: >-
+          The label file holds Traefik labels
+          ({{ tandoor_labels_lines | select('match', '^traefik[.]') | list }})
+          even though `tandoor_container_labels_traefik_enabled` is false
+        success_msg: "No Traefik label was written while Traefik labels are turned off"
+
+    - name: Show the verification summary
       ansible.builtin.debug:
         msg:
-          - "Tandoor systemd: {{ tandoor_service.status.ActiveState }}"
-          - "Tandoor HTTP: {{ tandoor_endpoint.status }}"
+          - "version: {{ tandoor_reported_version }}"
+          - "listening on: {{ tandoor_verify_url }} (container port {{ tandoor_container_http_port }})"
+          - "postgres ({{ tandoor_database_name }}): {{ tandoor_postgres_migrations.stdout | trim }} migrations"
+          - "sqlite at {{ tandoor_verify_sqlite_path }}: {{ tandoor_sqlite_file.stdout | trim }}"

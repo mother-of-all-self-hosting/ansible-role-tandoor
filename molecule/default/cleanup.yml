@@ -1,0 +1,62 @@
+# SPDX-FileCopyrightText: 2026 Slavi Pantaleev
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+---
+# Uninstalling is a supported operation (`tandoor_enabled: false`) that nothing
+# else in this suite reaches, and it used to fail outright on any installation
+# that had never run Tandoor 1.x, because it asked systemd to stop that
+# version's two services whether or not they existed.
+#
+# This runs as the scenario's `cleanup` step rather than as `side_effect`,
+# because `side_effect` would tear the installation down before `verify` gets to
+# look at it.
+- name: Uninstall Tandoor
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    tandoor_enabled: false
+
+  tasks:
+    - name: Include roles for uninstalling Tandoor
+      ansible.builtin.include_role:
+        name: "{{ role_name }}"
+        public: true
+      loop:
+        - com.devture.ansible.role.playbook_help
+        - com.devture.ansible.role.systemd_docker_base
+        - "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') | basename }}"
+      loop_control:
+        loop_var: role_name
+
+    - name: Check what uninstalling Tandoor left behind
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ devture_systemd_docker_base_systemd_path }}/{{ tandoor_identifier }}.service"
+        - "/{{ tandoor_identifier }}/env"
+        - "/{{ tandoor_identifier }}/labels"
+      register: tandoor_uninstalled_stat
+
+    - name: Assert that uninstalling removed the service and its support files
+      ansible.builtin.assert:
+        that: tandoor_uninstalled_stat.results | selectattr('stat.exists') | list | length == 0
+        fail_msg: >-
+          Uninstalling left
+          {{ tandoor_uninstalled_stat.results | selectattr('stat.exists') | map(attribute='item') | list }}
+          behind
+        success_msg: "Uninstalling removed the systemd service and the support files"
+
+    - name: Check whether the Tandoor container is still running
+      ansible.builtin.command:
+        argv: [docker, ps, --quiet, --filter, "name=^{{ tandoor_identifier }}$"]
+      register: tandoor_uninstalled_container
+      changed_when: false
+
+    - name: Assert that uninstalling stopped the Tandoor container
+      ansible.builtin.assert:
+        that: tandoor_uninstalled_container.stdout | trim | length == 0
+        fail_msg: "The `{{ tandoor_identifier }}` container is still running after uninstalling"
+        success_msg: "The `{{ tandoor_identifier }}` container is gone"

@@ -47,11 +47,24 @@ Currently these testing scenarios are available:
 
 ### `default`
 
-Tests a standard Tandoor installation.
+Tests a Tandoor installation backed by SQLite, with Traefik labels turned on.
+
+Besides the checks shared by both scenarios, it counts the migrations Django recorded in the SQLite file inside the container (so that "SQLite is configured" means "SQLite is what holds the data"), checks that no Postgres settings were rendered into the environment file, and reads the container label file to confirm that Traefik is told to route to the port Tandoor was told to listen on.
 
 ### `postgres`
 
-Tests a standard Tandoor installation with the Postgres database.
+Tests a Tandoor installation backed by Postgres, with Traefik labels turned off and Tandoor's own webserver moved off its default port.
+
+Besides the checks shared by both scenarios, it queries the Postgres database as the role's own database user for the migrations Django recorded there, confirms that Tandoor wrote no SQLite file to fall back on, and confirms that no Traefik label was written. Reaching Tandoor at all in this scenario proves that `tandoor_container_http_port` reached the webserver inside the container rather than only the published port and the Traefik labels.
+
+### Shared checks
+
+[`resources/tasks/verify_tandoor.yml`](resources/tasks/verify_tandoor.yml) holds what both scenarios check:
+
+- the systemd service is active *and* has not been restarting (the unit carries `Restart=always`, so "active" alone says nothing about a container that dies on every boot)
+- Tandoor answers `/` with a redirect to `/setup/`, which it can only decide after asking its database whether an account exists
+- Tandoor answers a request for a hostname the role did not configure with a 400, which is what makes the check above evidence that the role's environment file reached Django
+- the version Tandoor reports over its OpenAPI schema is the one `tandoor_version` pins in `defaults/main.yml`
 
 ## Running
 

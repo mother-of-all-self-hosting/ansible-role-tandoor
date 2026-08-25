@@ -30,15 +30,28 @@ provisioner:
       all:
         # Helper variables
         tandoor_debug_service_enabled: false
+        # A name the role never puts into ALLOWED_HOSTS, used to check that
+        # Tandoor turns away everything it was not configured for.
+        tandoor_molecule_unexpected_hostname: unexpected.molecule.test
 
         # Variables for Tandoor
+        tandoor_identifier: tandoor
         tandoor_uid: 0
         tandoor_gid: 0
         tandoor_scheme: http
-        tandoor_hostname: localhost
+        # Deliberately not localhost: a value nothing else could have supplied
+        # is what makes finding it in ALLOWED_HOSTS mean the role's env file
+        # reached the process.
+        tandoor_hostname: tandoor.molecule.test
+        # This scenario is the one that checks that no Traefik label is written
+        # while Traefik labels are turned off.
         tandoor_container_labels_traefik_enabled: false
-        tandoor_container_http_host_bind_port: 80
-        tandoor_environment_variable_secret: secret
+        # Deliberately not the default of 80, so that reaching Tandoor at all
+        # proves `tandoor_container_http_port` reached the webserver inside the
+        # container, and did not merely get published and labelled.
+        tandoor_container_http_port: 8080
+        tandoor_container_http_host_bind_port: 8080
+        tandoor_environment_variable_secret: molecule-secret-postgres
 
         # Variables required for Tandoor to connect to the Postgres database
         tandoor_database_type: postgres

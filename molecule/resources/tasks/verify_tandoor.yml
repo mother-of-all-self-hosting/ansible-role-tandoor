@@ -1,0 +1,165 @@
+# SPDX-FileCopyrightText: 2026 Slavi Pantaleev
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+---
+# The checks every Tandoor scenario runs, regardless of which database it
+# points the role at. Whatever distinguishes one scenario from another lives in
+# that scenario's own verify.yml.
+
+# Only for values that describe the role rather than the scenario. Scenario-tuned
+# values (ports, hostname, database) come from the scenario's group_vars, which
+# this must not shadow - hence the separate namespace.
+- name: Read the role's own defaults
+  ansible.builtin.include_vars:
+    file: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}/defaults/main.yml"
+    name: tandoor_role_defaults
+
+- name: Wait for the Tandoor systemd service to report itself active
+  ansible.builtin.systemd_service:
+    name: tandoor.service
+  register: tandoor_service
+  until: tandoor_service.status.ActiveState | default('') == 'active'
+  retries: 30
+  delay: 2
+  # So that a service which never comes up fails at the assert below, which says
+  # what was expected, rather than at this bare wait.
+  failed_when: false
+  changed_when: false
+
+# The unit carries `Restart=always`, which means a container that dies seconds
+# into every boot still leaves the unit `active` indefinitely. The restart
+# counter is what makes "the service is up" mean anything here.
+- name: Assert that the Tandoor service is up and has not been restarting
+  ansible.builtin.assert:
+    that:
+      - tandoor_service.status.ActiveState | default('') == 'active'
+      - tandoor_service.status.NRestarts | int == 0
+    fail_msg: >-
+      tandoor.service is {{ tandoor_service.status.ActiveState | default('not reporting a state') }}
+      after {{ tandoor_service.status.NRestarts | default('an unknown number of') }} restart(s)
+    success_msg: "tandoor.service is active and has not restarted"
+
+- name: Wait for Tandoor to answer at the hostname the role configured
+  ansible.builtin.uri:
+    url: "{{ tandoor_verify_url }}/"
+    follow_redirects: none
+    status_code: [302]
+  register: tandoor_root
+  until: tandoor_root.status | default(0) == 302
+  retries: 60
+  delay: 5
+  failed_when: false
+  changed_when: false
+
+- name: Retrieve the Tandoor service log
+  when: tandoor_root.status | default(0) != 302 or tandoor_debug_service_enabled | bool
+  ansible.builtin.command:
+    cmd: journalctl --no-pager --lines=60 --unit=tandoor.service
+  register: tandoor_journal
+  changed_when: false
+
+- name: Show the Tandoor service log
+  when: tandoor_journal.stdout is defined
+  ansible.builtin.debug:
+    var: tandoor_journal.stdout_lines
+
+# `/` is answered by Django, not by the nginx that sits in front of it: while
+# gunicorn is not up that same request gets nginx's own 502, and while the
+# database is unreachable the container exits rather than serving anything.
+#
+# The redirect target is what makes this a check on the database rather than on
+# the web server: Tandoor sends a first-time visitor to `/setup/` only after
+# asking its database whether an account exists yet.
+- name: Assert that Tandoor sends a first-time visitor to its setup page
+  ansible.builtin.assert:
+    that:
+      - tandoor_root.status | default(0) == 302
+      # `ansible.builtin.uri` reports the Location header absolutized against the
+      # request URL, so the raw `/setup/` the response carries arrives here as a
+      # full URL. Both forms are accepted, neither loosely.
+      - tandoor_root.location | default('') in ['/setup/', tandoor_verify_url ~ '/setup/']
+    fail_msg: >-
+      GET {{ tandoor_verify_url }}/ answered
+      {{ tandoor_root.status | default('nothing') }}
+      {{ ('-> ' ~ tandoor_root.location) if tandoor_root.location is defined else '' }},
+      rather than a 302 to /setup/
+    success_msg: "Tandoor redirects a first-time visitor to /setup/"
+
+# The counterpart of the check above, and the one that makes it mean something.
+# `ALLOWED_HOSTS` is rendered by the role's env template; if that env file did
+# not reach Django, `ALLOWED_HOSTS` would be at its built-in default and this
+# request would be answered the same way as the one above.
+- name: Ask Tandoor for the same page under a hostname the role did not configure
+  ansible.builtin.uri:
+    url: "{{ tandoor_verify_unexpected_host_url }}/"
+    follow_redirects: none
+    status_code: [400]
+  register: tandoor_unexpected_host
+  failed_when: false
+  changed_when: false
+
+- name: Assert that Tandoor turns away a hostname the role did not configure
+  ansible.builtin.assert:
+    that: tandoor_unexpected_host.status | default(0) == 400
+    fail_msg: >-
+      GET {{ tandoor_verify_unexpected_host_url }}/ answered
+      {{ tandoor_unexpected_host.status | default('nothing') }} rather than 400,
+      so ALLOWED_HOSTS is not what the role's env file says it is
+    success_msg: "Tandoor serves only the hostname the role put in ALLOWED_HOSTS"
+
+# Served by Django itself, out of `cookbook/version_info.py` of the code that is
+# actually running - not out of the image's labels or the tag it was pulled by.
+# This is what makes a version bump testable rather than merely deployable.
+- name: Ask Tandoor which version it is running
+  ansible.builtin.uri:
+    url: "{{ tandoor_verify_url }}/openapi/?format=json"
+    return_content: true
+  register: tandoor_openapi
+  changed_when: false
+
+- name: Remember the version Tandoor reported
+  ansible.builtin.set_fact:
+    tandoor_reported_version: "{{ (tandoor_openapi.content | from_json).info.version }}"
+
+# Reported as `<schema version> (<Tandoor version>)`, e.g. `0.0.0 (2.6.13)`.
+- name: Assert that the running Tandoor is the version defaults/main.yml pins
+  ansible.builtin.assert:
+    that: tandoor_reported_version.endswith('(' ~ tandoor_role_defaults.tandoor_version ~ ')')
+    fail_msg: >-
+      Tandoor reports version `{{ tandoor_reported_version }}`, which does not
+      carry the `{{ tandoor_role_defaults.tandoor_version }}` that
+      `tandoor_version` in defaults/main.yml pins
+    success_msg: >-
+      Tandoor reports `{{ tandoor_reported_version }}`, which carries the pinned
+      {{ tandoor_role_defaults.tandoor_version }}
+
+- name: Read the environment file the role rendered
+  ansible.builtin.slurp:
+    src: "{{ tandoor_verify_base_path }}/env"
+  register: tandoor_env_file
+
+- name: Remember the lines of the environment file
+  ansible.builtin.set_fact:
+    tandoor_env_lines: "{{ (tandoor_env_file.content | b64decode).splitlines() | map('trim') | list }}"
+
+# `SECRET_KEY` has no surface a request can reach, and `TANDOOR_PORT` has one
+# only in the scenario that moves it off its default, so these two are checked
+# where they are written.
+- name: Assert that the environment file carries the values the scenario set
+  ansible.builtin.assert:
+    that:
+      - "'SECRET_KEY=' ~ tandoor_environment_variable_secret in tandoor_env_lines"
+      - "'TANDOOR_PORT=' ~ tandoor_container_http_port in tandoor_env_lines"
+      - "'ALLOWED_HOSTS=' ~ tandoor_hostname in tandoor_env_lines"
+    fail_msg: "{{ tandoor_verify_base_path }}/env holds {{ tandoor_env_lines | select() | list }}"
+    success_msg: "The rendered environment file carries the secret, the port and the hostname"
+
+- name: Read the container label file the role rendered
+  ansible.builtin.slurp:
+    src: "{{ tandoor_verify_base_path }}/labels"
+  register: tandoor_labels_file
+
+- name: Remember the lines of the container label file
+  ansible.builtin.set_fact:
+    tandoor_labels_lines: "{{ (tandoor_labels_file.content | b64decode).splitlines() | map('trim') | select() | list }}"
