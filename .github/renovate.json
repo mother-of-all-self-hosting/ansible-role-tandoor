@@ -1,5 +1,9 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": [
+    "Tandoor bumps are not automerged at any level, patch included: the container runs Django's `migrate` unattended on every start (`boot.sh`, and without `set -e`, so a failed migration does not even stop the boot), and patch releases do carry schema migrations - 2.6.3 to 2.6.4 added `cookbook/migrations/0242_space_household_setup_completed.py`, one of the 17 patch spans checked - against a database that holds the operator's recipes, which a fresh-install Molecule run can never exercise.",
+    "What Molecule does gate is that the pinned version runs: both scenarios assert that the version Tandoor serves over its OpenAPI schema is the `tandoor_version` that defaults/main.yml pins."
+  ],
   "extends": [
     "github>mother-of-all-self-hosting/renovate-config#v1.0.0"
   ]
