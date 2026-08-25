@@ -39,3 +39,21 @@ just prek-install-git-pre-commit-hook
 This role supports [Molecule](https://docs.ansible.com/projects/molecule/), an Ansible testing framework designed for developing and testing Ansible collections, playbooks, and roles.
 
 Refer to [this page](./molecule/README.md) for details about how to utilize it.
+
+### Releases
+
+Tags (`v<Tandoor version>-<release>`) are cut automatically by the [autotag workflow](.github/workflows/autotag.yml), which asks [`bin/compute-next-tag.sh`](bin/compute-next-tag.sh) what the commit that just landed on `main` should be released as.
+
+The answer is derived from the state of the repository — the `tandoor_version` value in [`defaults/main.yml`](defaults/main.yml) and the tags that already exist — rather than from commit messages, so it does not depend on the order in which pull requests get merged:
+
+- a Tandoor version that has never been released starts a new release counter (`v2.6.14-0`)
+- any other change to `defaults/`, `meta/`, `tasks/` or `templates/` increments it (`v2.6.13-2`)
+- a change that only touches documentation, tests or CI configuration is not released at all
+
+To see what the currently checked out commit would be released as, run:
+
+```sh
+bin/compute-next-tag.sh
+```
+
+The computation is covered by [`bin/test-compute-next-tag.sh`](bin/test-compute-next-tag.sh), which the pre-commit hooks run whenever it, the script it tests, or `defaults/main.yml` changes.
