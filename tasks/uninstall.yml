@@ -10,19 +10,32 @@
     path: "{{ devture_systemd_docker_base_systemd_path }}/{{ tandoor_identifier }}.service"
   register: tandoor_service_stat
 
+# The `-api` and `-frontend` services are leftovers from version 1.x, which ran
+# Tandoor as two containers. Every installation made since then has the single
+# service only, and asking systemd to stop a unit it has never heard of is an
+# error - which is what made uninstalling fail for exactly those installations.
+- name: Check existence of the Tandoor systemd services to stop
+  ansible.builtin.stat:
+    path: "{{ devture_systemd_docker_base_systemd_path }}/{{ item }}.service"
+  loop:
+    - "{{ tandoor_api_identifier }}"
+    - "{{ tandoor_frontend_identifier }}"
+    - "{{ tandoor_identifier }}"
+  register: tandoor_stoppable_service_stat
+
 - name: Uninstall Tandoor systemd services and files
   when: tandoor_service_stat.stat.exists | bool
   block:
     - name: Ensure Tandoor systemd services are stopped
       ansible.builtin.service:
-        name: "{{ item }}"
+        name: "{{ item.item }}.service"
         state: stopped
         enabled: false
         daemon_reload: true
-      with_items:
-        - "{{ tandoor_api_identifier }}.service"
-        - "{{ tandoor_frontend_identifier }}.service"
-        - "{{ tandoor_identifier }}.service"
+      loop: "{{ tandoor_stoppable_service_stat.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: item.stat.exists
 
     - name: Ensure Tandoor systemd services do not exist
       ansible.builtin.file:
