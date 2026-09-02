@@ -1,53 +1,98 @@
+# SPDX-FileCopyrightText: 2026 Slavi Pantaleev
 # SPDX-FileCopyrightText: 2026 Suguru Hirahara
 # SPDX-FileCopyrightText: 2026 spatterlight
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 ---
-- name: Verify Tandoor systemd service
+- name: Verify Tandoor
   hosts: all
   become: true
   gather_facts: false
+
+  vars:
+    tandoor_verify_base_path: "/{{ tandoor_identifier }}"
+    tandoor_verify_url: "http://{{ tandoor_hostname }}:{{ tandoor_container_http_host_bind_port }}"
+    tandoor_verify_unexpected_host_url: "http://{{ tandoor_molecule_unexpected_hostname }}:{{ tandoor_container_http_host_bind_port }}"
+
+    # Where Tandoor's settings put the SQLite file when `DB_ENGINE` names the
+    # SQLite backend and nothing overrides the database name.
+    tandoor_verify_sqlite_path: /opt/recipes/db.sqlite3
+
+    tandoor_verify_sqlite_argv:
+      - docker
+      - exec
+      - "{{ tandoor_identifier }}"
+      - /opt/recipes/venv/bin/python
+      - -c
+      - >-
+        import sqlite3;
+        print(sqlite3.connect('file:{{ tandoor_verify_sqlite_path }}?mode=ro', uri=True)
+        .execute('SELECT count(*) FROM django_migrations').fetchone()[0])
+
   tasks:
-    - name: Wait for Tandoor service to become active (up to 180s)
-      ansible.builtin.systemd:
-        name: tandoor.service
-      register: tandoor_service
-      until: tandoor_service.status.ActiveState == 'active'
-      retries: 36
-      delay: 5
+    - name: Run the checks shared by all Tandoor scenarios
+      ansible.builtin.include_tasks:
+        file: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/resources/tasks/verify_tandoor.yml"
 
-    - name: Assert Tandoor service is active
-      ansible.builtin.assert:
-        that: tandoor_service.status.ActiveState == 'active'
-        fail_msg: "tandoor.service not active ({{ tandoor_service.status.ActiveState }})"
-        success_msg: "tandoor.service is active"
-
-    - name: Retrieve Tandoor service log for debugging
-      when: tandoor_debug_service_enabled | bool
+    # Pointing `tandoor_database_type` at `sqlite` is only worth testing if the
+    # data actually ends up there. Counting the migrations Django recorded in
+    # that file is what settles it - the file merely existing would prove
+    # nothing, and every check above would look exactly the same either way.
+    - name: Count the migrations Tandoor applied to its SQLite database
       ansible.builtin.command:
-        cmd: journalctl -xeu tandoor.service
+        argv: "{{ tandoor_verify_sqlite_argv }}"
+      register: tandoor_sqlite_migrations
       changed_when: false
+      failed_when: false
 
-    - name: Wait for Tandoor HTTP endpoint to respond (up to 10m)
-      ansible.builtin.uri:
-        url: "http://localhost:80/"
-        method: GET
-        status_code: [200, 302]
-        follow_redirects: none
-      register: tandoor_endpoint
-      until: tandoor_endpoint.status in [200, 302]
-      retries: 120
-      delay: 5
-
-    - name: Assert Tandoor HTTP endpoint responds
+    - name: Assert that Tandoor migrated its SQLite database
       ansible.builtin.assert:
-        that: tandoor_endpoint.status in [200, 302]
-        fail_msg: "Tandoor did not respond as expected ({{ tandoor_endpoint.status | default('no response') }})"
-        success_msg: "Tandoor responded with {{ tandoor_endpoint.status }}"
+        that:
+          - tandoor_sqlite_migrations.rc == 0
+          - tandoor_sqlite_migrations.stdout | trim | int > 100
+        fail_msg: >-
+          Reading `{{ tandoor_verify_sqlite_path }}` inside the container gave
+          rc={{ tandoor_sqlite_migrations.rc }},
+          stdout={{ tandoor_sqlite_migrations.stdout | default('') | trim }},
+          stderr={{ tandoor_sqlite_migrations.stderr | default('') | trim }}
+        success_msg: >-
+          Tandoor recorded {{ tandoor_sqlite_migrations.stdout | trim }} applied migrations
+          in `{{ tandoor_verify_sqlite_path }}`
 
-    - name: Show Tandoor systemd service status summary
+    # The Postgres half of the env template has to stay out of the file
+    # entirely, rather than be rendered with empty values that Django would then
+    # try to connect with.
+    - name: Assert that the environment file names SQLite and no Postgres server
+      ansible.builtin.assert:
+        that:
+          - "'DB_ENGINE=django.db.backends.sqlite3' in tandoor_env_lines"
+          - tandoor_env_lines | select('match', '^POSTGRES_') | list | length == 0
+        fail_msg: >-
+          The environment file holds
+          {{ tandoor_env_lines | select('match', '^(DB_ENGINE|POSTGRES_)') | list }}
+        success_msg: "The environment file names SQLite and carries no Postgres settings"
+
+    # This is the scenario that runs with Traefik labels turned on, so it is
+    # where the label file gets read. The port Traefik is told to route to has to
+    # be the port Tandoor was told to listen on: they come from one variable, and
+    # a role that let them drift would leave a working container behind a reverse
+    # proxy pointed at nothing.
+    - name: Assert that the label file routes Traefik at the port Tandoor listens on
+      ansible.builtin.assert:
+        that:
+          - "'traefik.enable=true' in tandoor_labels_lines"
+          - "'traefik.http.routers.' ~ tandoor_identifier ~ '.rule=Host(`' ~ tandoor_hostname ~ '`)' in tandoor_labels_lines"
+          - "'traefik.http.routers.' ~ tandoor_identifier ~ '.entrypoints=' ~ tandoor_container_labels_traefik_entrypoints in tandoor_labels_lines"
+          - "'traefik.http.services.' ~ tandoor_identifier ~ '.loadbalancer.server.port=' ~ tandoor_container_http_port in tandoor_labels_lines"
+        fail_msg: "The label file holds {{ tandoor_labels_lines }}"
+        success_msg: >-
+          Traefik is told to route `{{ tandoor_hostname }}` to port
+          {{ tandoor_container_http_port }}, which is the port Tandoor listens on
+
+    - name: Show the verification summary
       ansible.builtin.debug:
         msg:
-          - "Tandoor systemd: {{ tandoor_service.status.ActiveState }}"
-          - "Tandoor HTTP: {{ tandoor_endpoint.status }}"
+          - "version: {{ tandoor_reported_version }}"
+          - "sqlite ({{ tandoor_verify_sqlite_path }}): {{ tandoor_sqlite_migrations.stdout | trim }} migrations"
+          - "traefik label lines: {{ tandoor_labels_lines | length }}"

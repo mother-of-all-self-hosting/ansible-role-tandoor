@@ -1,3 +1,4 @@
+# SPDX-FileCopyrightText: 2026 Slavi Pantaleev
 # SPDX-FileCopyrightText: 2026 Suguru Hirahara
 # SPDX-FileCopyrightText: 2026 spatterlight
 #
@@ -13,17 +14,40 @@
       ansible.builtin.apt:
         update_cache: true
         cache_valid_time: 600
-      when: ansible_os_family == 'Debian'
+      when: ansible_facts["os_family"] == 'Debian'
 
     - name: Ensure required packages are installed for Tandoor Molecule tests preparation
       ansible.builtin.package:
         name:
+          # Used by the `ansible.builtin.uri` calls in verify.yml
           - python3-requests
+          # The storage driver Docker is configured with below. `overlay2` cannot be
+          # nested inside the container Molecule runs these tests in, and `vfs` (the
+          # usual fallback) has no copy-on-write, so it writes out every layer of
+          # Tandoor's image in full.
+          - fuse-overlayfs
         state: present
+
+    # The verification asks Tandoor for a page under the hostname the role put in
+    # `ALLOWED_HOSTS`, and for the same page under one it did not, so both names
+    # have to resolve to the host the container publishes its port on.
+    #
+    # Appended in place rather than through `ansible.builtin.lineinfile`, because
+    # Docker bind-mounts /etc/hosts into the container and the atomic rename that
+    # module ends with cannot replace a mount point.
+    - name: Ensure the hostnames the Tandoor verification uses resolve
+      ansible.builtin.shell:
+        cmd: >-
+          grep -qE "^127[.]0[.]0[.]1[[:space:]]+{{ item }}$" /etc/hosts
+          || printf '127.0.0.1 %s\n' '{{ item }}' >> /etc/hosts
+      changed_when: false
+      loop:
+        - "{{ tandoor_hostname }}"
+        - "{{ tandoor_molecule_unexpected_hostname }}"
 
     - name: Ensure Docker is installed for Tandoor Molecule tests preparation
       ansible.builtin.include_role:
         name: ansible-role-docker
       vars:
         docker_daemon_options:
-          storage-driver: vfs
+          storage-driver: fuse-overlayfs
