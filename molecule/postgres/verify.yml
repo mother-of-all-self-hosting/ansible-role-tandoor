@@ -42,11 +42,8 @@
       ansible.builtin.include_tasks:
         file: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/verify_tasks.yml"
 
-    # Pointing `tandoor_database_type` at `postgres` is only worth testing if it
-    # actually moves the data. Asking Postgres itself which migrations Django
-    # recorded there is what settles that: a `DB_ENGINE` that never reached the
-    # process would leave every check above looking exactly as convincing, while
-    # Tandoor quietly kept a SQLite file of its own.
+    # Verify Tandoor stores data on the database actually by asking Postgres which migrations Django
+    # recorded there.
     - name: Count the migrations Tandoor applied to the Postgres database
       ansible.builtin.command:
         argv: "{{ tandoor_verify_psql + ['--command=' ~ tandoor_verify_migration_count_sql] }}"

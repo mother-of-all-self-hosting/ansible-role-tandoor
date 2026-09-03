@@ -35,10 +35,8 @@
       ansible.builtin.include_tasks:
         file: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/verify_tasks.yml"
 
-    # Pointing `tandoor_database_type` at `sqlite` is only worth testing if the
-    # data actually ends up there. Counting the migrations Django recorded in
-    # that file is what settles it - the file merely existing would prove
-    # nothing, and every check above would look exactly the same either way.
+    # Verify Tandoor stores data on the database actually by counting the migrations Django recorded in
+    # that file.
     - name: Count the migrations Tandoor applied to its SQLite database
       ansible.builtin.command:
         argv: "{{ tandoor_verify_sqlite_argv }}"
