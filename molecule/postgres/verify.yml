@@ -112,10 +112,10 @@
           even though `tandoor_container_labels_traefik_enabled` is false
         success_msg: "No Traefik label was written while Traefik labels are turned off"
 
-    - name: Show the verification summary
+    - name: Show the Tandoor verification summary
       ansible.builtin.debug:
         msg:
-          - "version: {{ tandoor_reported_version }}"
-          - "listening on: {{ tandoor_verify_url }} (container port {{ tandoor_container_http_port }})"
-          - "postgres ({{ tandoor_database_name }}): {{ tandoor_postgres_migrations.stdout | trim }} migrations"
-          - "sqlite at {{ tandoor_verify_sqlite_path }}: {{ tandoor_sqlite_file.stdout | trim }}"
+          - "Tandoor version: {{ tandoor_reported_version }}"
+          - "Tandoor listening on: {{ tandoor_verify_url }} (container port {{ tandoor_container_http_port }})"
+          - "Tandoor Postgres ({{ tandoor_database_name }}): {{ tandoor_postgres_migrations.stdout | trim }} migrations"
+          - "Tandoor SQLite at {{ tandoor_verify_sqlite_path }}: {{ tandoor_sqlite_file.stdout | trim }}"

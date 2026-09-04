@@ -88,9 +88,9 @@
           Traefik is told to route `{{ tandoor_hostname }}` to port
           {{ tandoor_container_http_port }}, which is the port Tandoor listens on
 
-    - name: Show the verification summary
+    - name: Show the Tandoor verification summary
       ansible.builtin.debug:
         msg:
-          - "version: {{ tandoor_reported_version }}"
-          - "sqlite ({{ tandoor_verify_sqlite_path }}): {{ tandoor_sqlite_migrations.stdout | trim }} migrations"
-          - "traefik label lines: {{ tandoor_labels_lines | length }}"
+          - "Tandoor version: {{ tandoor_reported_version }}"
+          - "Tandoor SQLite ({{ tandoor_verify_sqlite_path }}): {{ tandoor_sqlite_migrations.stdout | trim }} migrations"
+          - "Tandoor Traefik label lines: {{ tandoor_labels_lines | length }}"
