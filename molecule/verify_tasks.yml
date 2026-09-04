@@ -13,7 +13,7 @@
 - name: Read the role's own defaults
   ansible.builtin.include_vars:
     file: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}/defaults/main.yml"
-    name: tandoor_role_defaults
+    name: tandoor_defaults
 
 - name: Wait for the Tandoor systemd service to report itself active
   ansible.builtin.systemd_service:
@@ -122,17 +122,11 @@
   ansible.builtin.set_fact:
     tandoor_reported_version: "{{ (tandoor_openapi.content | from_json).info.version }}"
 
-# Reported as `<schema version> (<Tandoor version>)`, e.g. `0.0.0 (2.6.13)`.
-- name: Assert that the running Tandoor is the version defaults/main.yml pins
+- name: Assert the running Tandoor is the version this role installs
   ansible.builtin.assert:
-    that: tandoor_reported_version.endswith('(' ~ tandoor_role_defaults.tandoor_version ~ ')')
-    fail_msg: >-
-      Tandoor reports version `{{ tandoor_reported_version }}`, which does not
-      carry the `{{ tandoor_role_defaults.tandoor_version }}` that
-      `tandoor_version` in defaults/main.yml pins
-    success_msg: >-
-      Tandoor reports `{{ tandoor_reported_version }}`, which carries the pinned
-      {{ tandoor_role_defaults.tandoor_version }}
+    that: tandoor_reported_version.endswith('(' ~ tandoor_defaults.tandoor_version ~ ')')
+    fail_msg: "Tandoor reports {{ tandoor_reported_version | default('none') }}, expected {{ tandoor_defaults.tandoor_version }}"
+    success_msg: "Tandoor reports {{ tandoor_reported_version }}"
 
 - name: Read the environment file the role rendered
   ansible.builtin.slurp:
