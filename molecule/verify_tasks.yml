@@ -111,7 +111,7 @@
 # Served by Django itself, out of `cookbook/version_info.py` of the code that is
 # actually running - not out of the image's labels or the tag it was pulled by.
 # This is what makes a version bump testable rather than merely deployable.
-- name: Ask Tandoor which version it is running
+- name: Query the version of the running Tandoor
   ansible.builtin.uri:
     url: "{{ tandoor_verify_url }}/openapi/?format=json"
     return_content: true
