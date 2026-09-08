@@ -19,17 +19,6 @@
     # SQLite backend and nothing overrides the database name.
     tandoor_verify_sqlite_path: /opt/recipes/db.sqlite3
 
-    tandoor_verify_sqlite_argv:
-      - docker
-      - exec
-      - "{{ tandoor_identifier }}"
-      - /opt/recipes/venv/bin/python
-      - -c
-      - >-
-        import sqlite3;
-        print(sqlite3.connect('file:{{ tandoor_verify_sqlite_path }}?mode=ro', uri=True)
-        .execute('SELECT count(*) FROM django_migrations').fetchone()[0])
-
   tasks:
     - name: Run the checks shared by all Tandoor scenarios
       ansible.builtin.include_tasks:
@@ -39,7 +28,16 @@
     # that file.
     - name: Count the migrations Tandoor applied to its SQLite database
       ansible.builtin.command:
-        argv: "{{ tandoor_verify_sqlite_argv }}"
+        argv:
+          - docker
+          - exec
+          - "{{ tandoor_identifier }}"
+          - /opt/recipes/venv/bin/python
+          - -c
+          - >-
+            import sqlite3;
+            print(sqlite3.connect('file:{{ tandoor_verify_sqlite_path }}?mode=ro', uri=True)
+            .execute('SELECT count(*) FROM django_migrations').fetchone()[0])
       register: tandoor_sqlite_migrations
       changed_when: false
       failed_when: false
