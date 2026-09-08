@@ -15,20 +15,21 @@
     file: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}/defaults/main.yml"
     name: tandoor_defaults
 
-- name: Wait for the Tandoor systemd service to report itself active
+- name: Wait for the Tandoor systemd service to become active (up to 180s)
   ansible.builtin.systemd_service:
     name: tandoor.service
   register: tandoor_service
-  until: tandoor_service.status.ActiveState | default('') == 'active'
-  retries: 30
-  delay: 2
-  # So that a service which never comes up fails at the assert below, which says
-  # what was expected, rather than at this bare wait.
+  until: tandoor_service.status.ActiveState == 'active'
+  retries: 36
+  delay: 5
+  # So that giving up is reported by the assertion below rather than as a
+  # wall of systemd unit properties.
   failed_when: false
-  changed_when: false
 
-# The unit carries `Restart=always`, which means a container that dies seconds
-# into every boot still leaves the unit `active` indefinitely. The restart
+# `Restart=always` in the systemd unit means that even a container which crashes
+# and gets restarted reads as active here, so this is a precondition rather than
+# a result.
+# The restart
 # counter is what makes "the service is up" mean anything here.
 - name: Assert that the Tandoor service is up and has not been restarting
   ansible.builtin.assert:
@@ -39,6 +40,12 @@
       tandoor.service is {{ tandoor_service.status.ActiveState | default('not reporting a state') }}
       after {{ tandoor_service.status.NRestarts | default('an unknown number of') }} restart(s)
     success_msg: "tandoor.service is active and has not restarted"
+
+- name: Retrieve the Tandoor systemd service log for debugging
+  when: tandoor_debug_service_enabled | bool
+  ansible.builtin.command:
+    cmd: "journalctl -xeu {{ tandoor_defaults.tandoor_identifier }}.service"
+  changed_when: false
 
 - name: Wait for Tandoor to answer at the hostname the role configured
   ansible.builtin.uri:
@@ -52,14 +59,14 @@
   failed_when: false
   changed_when: false
 
-- name: Retrieve the Tandoor service log
+- name: Retrieve the Tandoor systemd service log
   when: tandoor_root.status | default(0) != 302 or tandoor_debug_service_enabled | bool
   ansible.builtin.command:
     cmd: journalctl --no-pager --lines=60 --unit=tandoor.service
   register: tandoor_journal
   changed_when: false
 
-- name: Show the Tandoor service log
+- name: Show the Tandoor systemd service log
   when: tandoor_journal.stdout is defined
   ansible.builtin.debug:
     var: tandoor_journal.stdout_lines
