@@ -62,7 +62,7 @@
 - name: Retrieve the Tandoor systemd service log
   when: tandoor_root.status | default(0) != 302 or tandoor_debug_service_enabled | bool
   ansible.builtin.command:
-    cmd: journalctl --no-pager --lines=60 --unit=tandoor.service
+    cmd: journalctl --no-pager --output=cat --lines=60 --unit=tandoor.service
   register: tandoor_journal
   changed_when: false
 
