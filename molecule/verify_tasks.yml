@@ -7,12 +7,12 @@
 # points the role at. Whatever distinguishes one scenario from another lives in
 # that scenario's own verify.yml.
 
-# Only for values that describe the role rather than the scenario. Scenario-tuned
-# values (ports, hostname, database) come from the scenario's group_vars, which
-# this must not shadow - hence the separate namespace.
-- name: Read the role's own defaults
+# The role is not included in this playbook, so its defaults are not in
+# scope. Reading defaults/main.yml directly ties the version assertion
+# below.
+- name: Load the role defaults
   ansible.builtin.include_vars:
-    file: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}/defaults/main.yml"
+    file: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/defaults/main.yml"
     name: tandoor_defaults
 
 - name: Wait for the Tandoor systemd service to become active (up to 180s)
