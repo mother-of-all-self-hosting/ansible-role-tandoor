@@ -38,6 +38,8 @@
       SELECT app || '.' || name FROM django_migrations ORDER BY id DESC LIMIT 1
 
   tasks:
+    - name: Verify that Tandoor works
+      block:
     - name: Run the checks shared by all Tandoor scenarios
       ansible.builtin.include_tasks:
         file: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/verify_tasks.yml"
@@ -119,3 +121,19 @@
           - "Tandoor listening on: {{ tandoor_verify_url }} (container port {{ tandoor_container_http_port }})"
           - "Tandoor Postgres ({{ tandoor_database_name }}): {{ tandoor_postgres_migrations.stdout | trim }} migrations"
           - "Tandoor SQLite at {{ tandoor_verify_sqlite_path }}: {{ tandoor_sqlite_file.stdout | trim }}"
+
+      rescue:
+        # Whatever went wrong, the reason is almost always in the systemd service log.
+        - name: Retrieve the Tandoor systemd service log
+          ansible.builtin.command:
+            cmd: journalctl --no-pager --output=cat --unit=tandoor.service
+          register: tandoor_service_log
+          changed_when: false
+
+        - name: Show the Tandoor systemd service log
+          ansible.builtin.debug:
+            var: tandoor_service_log.stdout_lines
+
+        - name: Fail because verification did not pass
+          ansible.builtin.fail:
+            msg: "Tandoor verification failed. The systemd service log is printed above."

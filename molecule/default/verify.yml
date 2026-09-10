@@ -20,6 +20,8 @@
     tandoor_verify_sqlite_path: /opt/recipes/db.sqlite3
 
   tasks:
+    - name: Verify that Tandoor works
+      block:
     - name: Run the checks shared by all Tandoor scenarios
       ansible.builtin.include_tasks:
         file: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/verify_tasks.yml"
@@ -92,3 +94,19 @@
           - "Tandoor version: {{ tandoor_reported_version }}"
           - "Tandoor SQLite ({{ tandoor_verify_sqlite_path }}): {{ tandoor_sqlite_migrations.stdout | trim }} migrations"
           - "Tandoor Traefik label lines: {{ tandoor_labels_lines | length }}"
+
+      rescue:
+        # Whatever went wrong, the reason is almost always in the systemd service log.
+        - name: Retrieve the Tandoor systemd service log
+          ansible.builtin.command:
+            cmd: journalctl --no-pager --output=cat --unit=tandoor.service
+          register: tandoor_service_log
+          changed_when: false
+
+        - name: Show the Tandoor systemd service log
+          ansible.builtin.debug:
+            var: tandoor_service_log.stdout_lines
+
+        - name: Fail because verification did not pass
+          ansible.builtin.fail:
+            msg: "Tandoor verification failed. The systemd service log is printed above."
