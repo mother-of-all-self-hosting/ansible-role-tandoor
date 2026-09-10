@@ -22,78 +22,78 @@
   tasks:
     - name: Verify that Tandoor works
       block:
-    - name: Run the checks shared by all Tandoor scenarios
-      ansible.builtin.include_tasks:
-        file: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/verify_tasks.yml"
+        - name: Run the checks shared by all Tandoor scenarios
+          ansible.builtin.include_tasks:
+            file: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/verify_tasks.yml"
 
-    # Verify Tandoor stores data on the database actually by counting the migrations Django recorded in
-    # that file.
-    - name: Count the migrations Tandoor applied to its SQLite database
-      ansible.builtin.command:
-        argv:
-          - docker
-          - exec
-          - "{{ tandoor_identifier }}"
-          - /opt/recipes/venv/bin/python
-          - -c
-          - >-
-            import sqlite3;
-            print(sqlite3.connect('file:{{ tandoor_verify_sqlite_path }}?mode=ro', uri=True)
-            .execute('SELECT count(*) FROM django_migrations').fetchone()[0])
-      register: tandoor_sqlite_migrations
-      changed_when: false
-      failed_when: false
+        # Verify Tandoor stores data on the database actually by counting the migrations Django recorded in
+        # that file.
+        - name: Count the migrations Tandoor applied to its SQLite database
+          ansible.builtin.command:
+            argv:
+              - docker
+              - exec
+              - "{{ tandoor_identifier }}"
+              - /opt/recipes/venv/bin/python
+              - -c
+              - >-
+                import sqlite3;
+                print(sqlite3.connect('file:{{ tandoor_verify_sqlite_path }}?mode=ro', uri=True)
+                .execute('SELECT count(*) FROM django_migrations').fetchone()[0])
+          register: tandoor_sqlite_migrations
+          changed_when: false
+          failed_when: false
 
-    - name: Assert that Tandoor migrated its SQLite database
-      ansible.builtin.assert:
-        that:
-          - tandoor_sqlite_migrations.rc == 0
-          - tandoor_sqlite_migrations.stdout | trim | int > 100
-        fail_msg: >-
-          Reading `{{ tandoor_verify_sqlite_path }}` inside the container gave
-          rc={{ tandoor_sqlite_migrations.rc }},
-          stdout={{ tandoor_sqlite_migrations.stdout | default('') | trim }},
-          stderr={{ tandoor_sqlite_migrations.stderr | default('') | trim }}
-        success_msg: >-
-          Tandoor recorded {{ tandoor_sqlite_migrations.stdout | trim }} applied migrations
-          in `{{ tandoor_verify_sqlite_path }}`
+        - name: Assert that Tandoor migrated its SQLite database
+          ansible.builtin.assert:
+            that:
+              - tandoor_sqlite_migrations.rc == 0
+              - tandoor_sqlite_migrations.stdout | trim | int > 100
+            fail_msg: >-
+              Reading `{{ tandoor_verify_sqlite_path }}` inside the container gave
+              rc={{ tandoor_sqlite_migrations.rc }},
+              stdout={{ tandoor_sqlite_migrations.stdout | default('') | trim }},
+              stderr={{ tandoor_sqlite_migrations.stderr | default('') | trim }}
+            success_msg: >-
+              Tandoor recorded {{ tandoor_sqlite_migrations.stdout | trim }} applied migrations
+              in `{{ tandoor_verify_sqlite_path }}`
 
-    # The Postgres half of the env template has to stay out of the file
-    # entirely, rather than be rendered with empty values that Django would then
-    # try to connect with.
-    - name: Assert that the environment file names SQLite and no Postgres server
-      ansible.builtin.assert:
-        that:
-          - "'DB_ENGINE=django.db.backends.sqlite3' in tandoor_env_lines"
-          - tandoor_env_lines | select('match', '^POSTGRES_') | list | length == 0
-        fail_msg: >-
-          The environment file holds
-          {{ tandoor_env_lines | select('match', '^(DB_ENGINE|POSTGRES_)') | list }}
-        success_msg: "The environment file names SQLite and carries no Postgres settings"
+        # The Postgres half of the env template has to stay out of the file
+        # entirely, rather than be rendered with empty values that Django would then
+        # try to connect with.
+        - name: Assert that the environment file names SQLite and no Postgres server
+          ansible.builtin.assert:
+            that:
+              - "'DB_ENGINE=django.db.backends.sqlite3' in tandoor_env_lines"
+              - tandoor_env_lines | select('match', '^POSTGRES_') | list | length == 0
+            fail_msg: >-
+              The environment file holds
+              {{ tandoor_env_lines | select('match', '^(DB_ENGINE|POSTGRES_)') | list }}
+            success_msg: "The environment file names SQLite and carries no Postgres settings"
 
-    # This is the scenario that runs with Traefik labels turned on, so it is
-    # where the label file gets read. The port Traefik is told to route to has to
-    # be the port Tandoor was told to listen on: they come from one variable, and
-    # a role that let them drift would leave a working container behind a reverse
-    # proxy pointed at nothing.
-    - name: Assert that the label file routes Traefik at the port Tandoor listens on
-      ansible.builtin.assert:
-        that:
-          - "'traefik.enable=true' in tandoor_labels_lines"
-          - "'traefik.http.routers.' ~ tandoor_identifier ~ '.rule=Host(`' ~ tandoor_hostname ~ '`)' in tandoor_labels_lines"
-          - "'traefik.http.routers.' ~ tandoor_identifier ~ '.entrypoints=' ~ tandoor_container_labels_traefik_entrypoints in tandoor_labels_lines"
-          - "'traefik.http.services.' ~ tandoor_identifier ~ '.loadbalancer.server.port=' ~ tandoor_container_http_port in tandoor_labels_lines"
-        fail_msg: "The label file holds {{ tandoor_labels_lines }}"
-        success_msg: >-
-          Traefik is told to route `{{ tandoor_hostname }}` to port
-          {{ tandoor_container_http_port }}, which is the port Tandoor listens on
+        # This is the scenario that runs with Traefik labels turned on, so it is
+        # where the label file gets read. The port Traefik is told to route to has to
+        # be the port Tandoor was told to listen on: they come from one variable, and
+        # a role that let them drift would leave a working container behind a reverse
+        # proxy pointed at nothing.
+        - name: Assert that the label file routes Traefik at the port Tandoor listens on
+          ansible.builtin.assert:
+            that:
+              - "'traefik.enable=true' in tandoor_labels_lines"
+              - "'traefik.http.routers.' ~ tandoor_identifier ~ '.rule=Host(`' ~ tandoor_hostname ~ '`)' in tandoor_labels_lines"
+              - "'traefik.http.routers.' ~ tandoor_identifier ~ '.entrypoints=' ~ tandoor_container_labels_traefik_entrypoints in tandoor_labels_lines"
+              - "'traefik.http.services.' ~ tandoor_identifier ~ '.loadbalancer.server.port=' ~ tandoor_container_http_port in tandoor_labels_lines"
+            fail_msg: "The label file holds {{ tandoor_labels_lines }}"
+            success_msg: >-
+              Traefik is told to route `{{ tandoor_hostname }}` to port
+              {{ tandoor_container_http_port }}, which is the port Tandoor listens on
 
-    - name: Show the Tandoor verification summary
-      ansible.builtin.debug:
-        msg:
-          - "Tandoor version: {{ tandoor_reported_version }}"
-          - "Tandoor SQLite ({{ tandoor_verify_sqlite_path }}): {{ tandoor_sqlite_migrations.stdout | trim }} migrations"
-          - "Tandoor Traefik label lines: {{ tandoor_labels_lines | length }}"
+        - name: Show the Tandoor verification summary
+          ansible.builtin.debug:
+            msg:
+              - "Tandoor version: {{ tandoor_reported_version }}"
+              - "Tandoor SQLite ({{ tandoor_verify_sqlite_path }}): {{ tandoor_sqlite_migrations.stdout | trim }} migrations"
+              - "Tandoor Traefik label lines: {{ tandoor_labels_lines | length }}"
 
       rescue:
         # Whatever went wrong, the reason is almost always in the systemd service log.
