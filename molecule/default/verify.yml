@@ -19,6 +19,9 @@
     # SQLite backend and nothing overrides the database name.
     tandoor_verify_sqlite_path: /opt/recipes/db.sqlite3
 
+    tandoor_verify_units:
+      - tandoor.service
+
   tasks:
     - name: Verify that Tandoor works
       block:

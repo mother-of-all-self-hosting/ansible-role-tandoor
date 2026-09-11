@@ -37,6 +37,10 @@
     tandoor_verify_latest_migration_sql: >-
       SELECT app || '.' || name FROM django_migrations ORDER BY id DESC LIMIT 1
 
+    tandoor_verify_units:
+      - tandoor.service
+      - postgres.service
+
   tasks:
     - name: Verify that Tandoor works
       block:
